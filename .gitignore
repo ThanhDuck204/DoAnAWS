@@ -1,45 +1,169 @@
-# Node
+# =========================
+# Node.js / Package Manager
+# =========================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# Next.js
+# Do NOT ignore package-lock.json / yarn.lock / pnpm-lock.yaml
+# These lock files should usually be committed.
+
+
+# =========================
+# Next.js / React Build
+# =========================
 .next/
 out/
 build/
 dist/
 .cache/
+.turbo/
+.vercel/
+.tmp/
 tmp/
 coverage/
 *.tmp
 
-# Environment variables
+
+# =========================
+# Environment Variables
+# =========================
 .env
 .env.local
 .env.development
 .env.production
 .env.test
+.env.development.local
+.env.production.local
+.env.test.local
+.env.*.local
+.env*.local
 
-# Misc
+
+# =========================
+# Secrets / API Keys / Certificates
+# =========================
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+secrets/
+secret/
+credentials/
+private/
+keys/
+
+credentials.json
+service-account.json
+firebase-service-account.json
+google-service-account.json
+aws-credentials.json
+
+
+# =========================
+# AWS / Serverless / CDK / SAM
+# =========================
+.aws/
+.aws-sam/
+.aws-sam-build/
+cdk.out/
+.serverless/
+.serverless_nextjs/
+amplify/#current-cloud-backend/
+amplify/.config/local-*
+amplify/backend/amplify-meta.json
+amplify/backend/awscloudformation/
+amplify/team-provider-info.json
+
+
+# =========================
+# Database / Local Storage
+# =========================
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+local.db
+dev.db
+
+data/
+storage/
+uploads/
+public/uploads/
+
+
+# =========================
+# Logs
+# =========================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+
+# =========================
+# Testing / Coverage
+# =========================
+coverage/
+.nyc_output/
+jest-cache/
+.playwright/
+test-results/
+playwright-report/
+
+
+# =========================
+# TypeScript / ESLint / Cache
+# =========================
+*.tsbuildinfo
+.eslintcache
+.stylelintcache
+
+
+# =========================
+# OS Files
+# =========================
 .DS_Store
 Thumbs.db
-*.log
-*.swp
-*.swo
-*~
+ehthumbs.db
+Desktop.ini
 
-# IDE
+
+# =========================
+# IDE / Editor
+# =========================
 .vscode/
 .idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
-*.sw*
+*.sw?
+*.swp
+*.swo
+*~
 
-# AWS
-.aws-sam/
-.aws-sam-build/
-cdk.out/
+
+# =========================
+# Docker / Local Override
+# =========================
+docker-compose.override.yml
+
+
+# =========================
+# Misc
+# =========================
+.cache/
+.temp/
+temp/

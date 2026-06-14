@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AI Meeting Workforce Platform
 
 Repo layout:
@@ -23,3 +24,6 @@ Cost posture:
 - Keep backend deploy serverless or scale-to-zero while traffic is low.
 - Keep monthly target around `30-50` credits by limiting AI/audio jobs and avoiding always-on infrastructure.
 - See `backend/README.md` for DynamoDB and deployment details.
+=======
+# DoAnAWS
+>>>>>>> 1277b3c773fb5d80e78e3e77d4d5e7ec222cc995
