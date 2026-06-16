@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   FiBarChart2,
@@ -7,74 +8,100 @@ import {
   FiCheckCircle,
   FiFileText,
   FiLoader,
+  FiLock,
+  FiShield,
   FiTrendingUp,
   FiUsers,
   FiZap,
+  FiChevronDown,
 } from 'react-icons/fi';
 import AppShell, { Panel, StatCard, StatusPill, LoadingState } from '../../src/components/layout/AppShell';
-import { getUsers, getTasks as getMockTasks, getMeetings, getDepartments } from '../../src/services/legacyDataService';
+import { useWorkspace } from '../../src/context/WorkspaceContext';
 
 export default function AdminAnalytics() {
-  const [user, setUser] = useState(null);
-  const [data, setData] = useState({ users: [], tasks: [], meetings: [], departments: [] });
-  const [loading, setLoading] = useState(true);
+  const {
+    currentUser, loading, workspaces,
+    activeWorkspace, activeWorkspaceId, selectWorkspace,
+    workspaceRole, workspaceTasks, workspaceMeetings, workspaceMembers,
+  } = useWorkspace();
+  const [showWsPicker, setShowWsPicker] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const [users, tasks, meetings, departments] = await Promise.all([
-        getUsers(), getMockTasks(), getMeetings(), getDepartments()
-      ]);
-      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-      const fallback = users.find((u) => u.role === 'ADMIN');
-      const currentUser = storedUser?.role === 'ADMIN' ? { ...fallback, ...storedUser } : fallback;
-      await new Promise((r) => setTimeout(r, 400));
-      setUser(currentUser);
-      setData({ users, tasks, meetings, departments });
-      setLoading(false);
+  const user = useMemo(() => {
+    if (!currentUser) return null;
+    return {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      avatar: currentUser.avatar,
+      role: workspaceRole || currentUser.role,
+      departmentId: currentUser.departmentId,
+      createdAt: currentUser.createdAt,
     };
-    load();
-  }, []);
+  }, [currentUser, workspaceRole]);
+
+  const myWorkspaces = useMemo(() => {
+    if (!currentUser) return [];
+    return workspaces.filter((ws) =>
+      ws.members?.some((m) => m.userId === currentUser.id)
+    );
+  }, [workspaces, currentUser]);
+
+  const isOwner = workspaceRole === 'OWNER';
+
+  // Scope data to active workspace
+  const scopedTasks = useMemo(
+    () => (workspaceTasks || []).filter(
+      (t) => t.workspaceId === activeWorkspace?.id || t.departmentId === activeWorkspace?.id
+    ),
+    [workspaceTasks, activeWorkspace]
+  );
+  const scopedMeetings = useMemo(
+    () => (workspaceMeetings || []).filter(
+      (m) => m.workspaceId === activeWorkspace?.id
+    ),
+    [workspaceMeetings, activeWorkspace]
+  );
 
   const analytics = useMemo(() => {
-    if (!data.users.length) return null;
+    if (!activeWorkspace) return null;
 
-    const activeUsers = data.users.filter((u) => u.status === 'ACTIVE').length;
-    const totalMeetings = data.meetings.length;
-    const completedMeetings = data.meetings.filter((m) => m.status === 'COMPLETED').length;
-    const processingMeetings = data.meetings.filter((m) => m.status === 'PROCESSING').length;
+    const totalMembers = workspaceMembers.length;
+    const totalMeetings = scopedMeetings.length;
+    const completedMeetings = scopedMeetings.filter((m) => m.status === 'COMPLETED').length;
+    const processingMeetings = scopedMeetings.filter((m) => m.status === 'PROCESSING').length;
 
-    const totalTasks = data.tasks.length;
-    const completedTasks = data.tasks.filter((t) => t.status === 'COMPLETED').length;
-    const inProgressTasks = data.tasks.filter((t) => t.status === 'IN_PROGRESS').length;
-    const pendingTasks = data.tasks.filter((t) => t.status === 'PENDING').length;
-    const overdueTasks = data.tasks.filter(
+    const totalTasks = scopedTasks.length;
+    const completedTasks = scopedTasks.filter((t) => t.status === 'COMPLETED').length;
+    const inProgressTasks = scopedTasks.filter((t) => t.status === 'IN_PROGRESS').length;
+    const pendingTasks = scopedTasks.filter((t) => t.status === 'PENDING').length;
+    const overdueTasks = scopedTasks.filter(
       (t) => t.deadline && new Date(t.deadline) < new Date() && t.status !== 'COMPLETED'
     ).length;
 
     const avgProgress = totalTasks
-      ? Math.round(data.tasks.reduce((s, t) => s + t.progress, 0) / totalTasks)
+      ? Math.round(scopedTasks.reduce((s, t) => s + t.progress, 0) / totalTasks)
       : 0;
 
-    const deptProductivity = data.departments.map((dept) => {
-      const deptTasks = data.tasks.filter((t) => t.departmentId === dept.id);
-      const done = deptTasks.filter((t) => t.status === 'COMPLETED').length;
+    // Group tasks by assignee for productivity
+    const memberProductivity = workspaceMembers.map((m) => {
+      const memberTasks = scopedTasks.filter((t) => t.assigneeId === m.userId);
+      const done = memberTasks.filter((t) => t.status === 'COMPLETED').length;
       return {
-        name: dept.name,
-        total: deptTasks.length,
+        name: m.name || m.nickname || 'Unknown',
+        total: memberTasks.length,
         completed: done,
-        rate: deptTasks.length ? Math.round((done / deptTasks.length) * 100) : 0,
+        rate: memberTasks.length ? Math.round((done / memberTasks.length) * 100) : 0,
       };
+    }).filter((p) => p.total > 0);
+
+    const roleDist = {};
+    workspaceMembers.forEach((m) => {
+      const role = m.role || 'EMPLOYEE';
+      roleDist[role] = (roleDist[role] || 0) + 1;
     });
 
-    const roleDist = {
-      ADMIN: data.users.filter((u) => u.role === 'ADMIN').length,
-      MANAGER: data.users.filter((u) => u.role === 'MANAGER').length,
-      EMPLOYEE: data.users.filter((u) => u.role === 'EMPLOYEE').length,
-    };
-
     return {
-      activeUsers,
+      activeUsers: totalMembers,
       totalMeetings,
       completedMeetings,
       processingMeetings,
@@ -84,73 +111,190 @@ export default function AdminAnalytics() {
       pendingTasks,
       overdueTasks,
       avgProgress,
-      deptProductivity,
+      memberProductivity,
       roleDist,
+      workspaceName: activeWorkspace.name,
     };
-  }, [data]);
+  }, [activeWorkspace, workspaceMembers, workspaceTasks, workspaceMeetings]);
 
-  if (loading || !analytics || !user) return <LoadingState label="Loading analytics..." />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLoader className="mx-auto h-8 w-8 animate-spin text-primary-600" />
+          <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLock className="mx-auto h-8 w-8 text-slate-400" />
+          <p className="mt-4 text-sm font-medium text-slate-500">Please log in first.</p>
+          <Link href="/login" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Login</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace picker
+  if (!activeWorkspace) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiBriefcase className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Select a workspace</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Choose a workspace to view its analytics.</p>
+          <div className="mt-6 space-y-2">
+            {myWorkspaces.map((ws) => (
+              <button
+                key={ws.id}
+                type="button"
+                onClick={() => selectWorkspace(ws.id)}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              >
+                {ws.name}
+              </button>
+            ))}
+            {myWorkspaces.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-sm text-slate-500">
+                No workspaces yet. <Link href="/workspace" className="text-primary-600">Create one</Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiLock className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Owner access required</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            You need the Owner role in <strong>{activeWorkspace.name}</strong> to view analytics.
+          </p>
+          <Link href="/workspace" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Workspace</Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!analytics) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <FiLoader className="mx-auto h-8 w-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
 
   return (
     <AppShell
       user={user}
-      eyebrow="Admin"
-      title="Company analytics"
-      description="High-level metrics across departments, meetings, and tasks."
+      eyebrow={activeWorkspace?.name || 'Admin'}
+      title="Workspace analytics"
+      description={`High-level metrics for ${analytics.workspaceName}`}
     >
+      {/* Workspace selector */}
+      <div className="relative mb-4">
+        <button
+          type="button"
+          onClick={() => setShowWsPicker(!showWsPicker)}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >
+          <FiBriefcase className="h-4 w-4" />
+          {activeWorkspace.name}
+          <FiChevronDown className="h-4 w-4" />
+        </button>
+        {showWsPicker && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowWsPicker(false)} />
+            <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1 shadow-lg">
+              {myWorkspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => { selectWorkspace(ws.id); setShowWsPicker(false); }}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                    ws.id === activeWorkspaceId
+                      ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Active users" value={analytics.activeUsers} detail="Across all roles" icon={FiUsers} tone="blue" />
+        <StatCard label="Active members" value={analytics.activeUsers} detail="Workspace members" icon={FiUsers} tone="blue" />
         <StatCard label="Meetings" value={analytics.totalMeetings} detail={`${analytics.completedMeetings} completed`} icon={FiFileText} tone="amber" />
         <StatCard label="Tasks" value={analytics.totalTasks} detail={`${analytics.completedTasks} completed`} icon={FiCheckCircle} tone="green" />
-        <StatCard label="Avg progress" value={`${analytics.avgProgress}%`} detail="Company-wide" icon={FiTrendingUp} tone="slate" />
+        <StatCard label="Avg progress" value={`${analytics.avgProgress}%`} detail="Workspace-wide" icon={FiTrendingUp} tone="slate" />
       </div>
 
       <div className="mt-6 grid gap-6 xl:grid-cols-2">
-        {/* Department productivity */}
-        <Panel title="Department productivity" description="Completion rate per department">
+        {/* Member productivity */}
+        <Panel title="Member productivity" description="Completion rate per member">
           <div className="space-y-4">
-            {analytics.deptProductivity.map((dept, idx) => (
-              <div key={dept.name} className="flex items-center gap-4">
-                <span className="w-28 text-xs font-bold text-slate-600 dark:text-slate-400">{dept.name}</span>
+            {analytics.memberProductivity.map((mp, idx) => (
+              <div key={mp.name} className="flex items-center gap-4">
+                <span className="w-28 text-xs font-bold text-slate-600 dark:text-slate-400 truncate">{mp.name}</span>
                 <div className="flex-1 h-5 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden">
                   <motion.div
                     initial={{ width: 0 }}
-                    animate={{ width: `${dept.rate}%` }}
+                    animate={{ width: `${mp.rate}%` }}
                     transition={{ duration: 0.6, delay: idx * 0.06 }}
                     className="h-full rounded-full bg-gradient-to-r from-primary-500 to-sky-400"
-                    style={{ minWidth: dept.rate ? '20px' : 0 }}
+                    style={{ minWidth: mp.rate ? '20px' : 0 }}
                   />
                 </div>
                 <span className="w-16 text-right text-xs font-bold text-slate-700 dark:text-slate-300">
-                  {dept.completed}/{dept.total}
+                  {mp.completed}/{mp.total}
                 </span>
               </div>
             ))}
+            {analytics.memberProductivity.length === 0 && (
+              <p className="text-sm text-slate-400 dark:text-slate-500 italic text-center py-4">
+                No tasks assigned yet.
+              </p>
+            )}
           </div>
         </Panel>
 
         {/* Role distribution */}
-        <Panel title="Role distribution" description="User breakdown by role">
+        <Panel title="Role distribution" description="Member breakdown by role">
           <div className="grid grid-cols-3 gap-4">
-            {[
-              { key: 'ADMIN', label: 'Admins', value: analytics.roleDist.ADMIN, color: 'from-red-500 to-rose-400', icon: FiBarChart2 },
-              { key: 'MANAGER', label: 'Managers', value: analytics.roleDist.MANAGER, color: 'from-amber-500 to-orange-400', icon: FiBriefcase },
-              { key: 'EMPLOYEE', label: 'Employees', value: analytics.roleDist.EMPLOYEE, color: 'from-emerald-500 to-teal-400', icon: FiUsers },
-            ].map((item) => {
-              const max = Math.max(analytics.roleDist.ADMIN, analytics.roleDist.MANAGER, analytics.roleDist.EMPLOYEE, 1);
+            {Object.entries(analytics.roleDist).map(([role, count]) => {
+              const max = Math.max(...Object.values(analytics.roleDist), 1);
+              const colorSet = role === 'OWNER'
+                ? { icon: FiBarChart2, from: 'from-red-500 to-rose-400' }
+                : role === 'VICE_ADMIN'
+                  ? { icon: FiShield, from: 'from-purple-500 to-violet-400' }
+                  : role === 'MANAGER'
+                    ? { icon: FiBriefcase, from: 'from-amber-500 to-orange-400' }
+                    : { icon: FiUsers, from: 'from-emerald-500 to-teal-400' };
               return (
-                <div key={item.key} className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
-                  <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${item.color} text-white shadow-lg">
-                    <item.icon className="h-5 w-5" />
+                <div key={role} className="rounded-xl bg-slate-50 p-4 text-center dark:bg-slate-800">
+                  <div className={`mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br ${colorSet.from} text-white shadow-lg`}>
+                    <colorSet.icon className="h-5 w-5" />
                   </div>
-                  <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{item.value}</p>
-                  <p className="mt-1 text-xs font-semibold text-slate-500">{item.label}</p>
+                  <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{count}</p>
+                  <p className="mt-1 text-xs font-semibold text-slate-500">{role}</p>
                   <div className="mt-3 h-2 rounded-full bg-slate-200 dark:bg-slate-700 overflow-hidden">
                     <motion.div
                       initial={{ width: 0 }}
-                      animate={{ width: `${(item.value / max) * 100}%` }}
+                      animate={{ width: `${(count / max) * 100}%` }}
                       transition={{ duration: 0.5 }}
-                      className={`h-full rounded-full bg-gradient-to-r ${item.color}`}
+                      className={`h-full rounded-full bg-gradient-to-r ${colorSet.from}`}
                     />
                   </div>
                 </div>

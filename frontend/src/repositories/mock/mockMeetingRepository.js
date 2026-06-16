@@ -1,18 +1,42 @@
 /**
- * MockMeetingRepository — in-memory mock implementation
+ * MockMeetingRepository — mock implementation
  *
- * Uses seed data from @/data/seed/meetings
+ * Persists to localStorage to survive server restarts.
+ * Falls back to seed data from @/data/seed/meetings on first load.
  */
 
 import { mockWorkspaceMeetings } from '@/data/seed/meetings';
 
-const DELAY_MS = 30;
+const DELAY_MS = 20;
+const STORAGE_KEY = 'meetingAppMockMeetings';
 const delay = (ms = DELAY_MS) => new Promise((r) => setTimeout(r, ms));
 
 let store = null;
 
+function readPersistedStore() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY);
+    return value ? JSON.parse(value) : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistStore() {
+  if (typeof window === 'undefined' || !store) return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  } catch {
+    // Swallow — persistence should never block operations.
+  }
+}
+
 function getStore() {
-  if (!store) store = JSON.parse(JSON.stringify(mockWorkspaceMeetings));
+  if (!store) {
+    store = readPersistedStore();
+    if (!store) store = JSON.parse(JSON.stringify(mockWorkspaceMeetings));
+  }
   return store;
 }
 
@@ -22,10 +46,22 @@ export async function findById(id) {
   return found ? JSON.parse(JSON.stringify(found)) : null;
 }
 
+export async function findAll() {
+  await delay();
+  return getStore().map((m) => JSON.parse(JSON.stringify(m)));
+}
+
 export async function findByWorkspace(workspaceId) {
   await delay();
   return getStore()
     .filter((m) => m.workspaceId === workspaceId)
+    .map((m) => JSON.parse(JSON.stringify(m)));
+}
+
+export async function findByDepartment(departmentId) {
+  await delay();
+  return getStore()
+    .filter((m) => m.departmentId === departmentId)
     .map((m) => JSON.parse(JSON.stringify(m)));
 }
 
@@ -68,24 +104,27 @@ export async function create(data) {
     updatedAt: now,
   };
   getStore().unshift(meeting);
+  persistStore();
   return JSON.parse(JSON.stringify(meeting));
 }
 
 export async function update(id, data) {
   await delay();
-  const store = getStore();
-  const idx = store.findIndex((m) => m.id === id);
+  const s = getStore();
+  const idx = s.findIndex((m) => m.id === id);
   if (idx === -1) return null;
   const now = new Date().toISOString();
-  store[idx] = { ...store[idx], ...data, updatedAt: now };
-  return JSON.parse(JSON.stringify(store[idx]));
+  s[idx] = { ...s[idx], ...data, updatedAt: now };
+  persistStore();
+  return JSON.parse(JSON.stringify(s[idx]));
 }
 
 export async function delete_(id) {
   await delay();
-  const store = getStore();
-  const idx = store.findIndex((m) => m.id === id);
-  if (idx !== -1) store.splice(idx, 1);
+  const s = getStore();
+  const idx = s.findIndex((m) => m.id === id);
+  if (idx !== -1) s.splice(idx, 1);
+  persistStore();
 }
 
-export default { findById, findByWorkspace, findRecentByWorkspace, create, update, delete_ };
+export default { findById, findAll, findByWorkspace, findByDepartment, findRecentByWorkspace, create, update, delete_ };

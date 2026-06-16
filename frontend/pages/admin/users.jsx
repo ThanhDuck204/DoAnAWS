@@ -1,76 +1,200 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { FiLoader, FiMail, FiShield, FiUser, FiUserCheck, FiUserX, FiUsers } from 'react-icons/fi';
+import { FiBriefcase, FiChevronDown, FiLoader, FiLock, FiMail, FiShield, FiUser, FiUserCheck, FiUserX, FiUsers } from 'react-icons/fi';
 import AppShell, { Panel, StatCard, StatusPill, LoadingState, EmptyState } from '../../src/components/layout/AppShell';
-import { getUsers } from '../../src/services/legacyDataService';
-
-const departmentNames = {
-  'dept-1': 'Frontend Team',
-  'dept-2': 'Backend Team',
-  'dept-3': 'AI Team',
-  'dept-4': 'DevOps Team',
-};
+import { useWorkspace } from '../../src/context/WorkspaceContext';
 
 export default function AdminUsers() {
-  const [user, setUser] = useState(null);
-  const [data, setData] = useState({ users: [] });
-  const [loading, setLoading] = useState(true);
+  const {
+    currentUser, loading, workspaces,
+    activeWorkspace, activeWorkspaceId, selectWorkspace,
+    workspaceRole, workspaceMembers,
+  } = useWorkspace();
   const [filterRole, setFilterRole] = useState('all');
+  const [showWsPicker, setShowWsPicker] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const [users] = await Promise.all([
-        getUsers()
-      ]);
-      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-      const fallback = users.find((u) => u.role === 'ADMIN');
-      const currentUser = storedUser?.role === 'ADMIN' ? { ...fallback, ...storedUser } : fallback;
-      await new Promise((r) => setTimeout(r, 300));
-      setUser(currentUser);
-      setData({ users });
-      setLoading(false);
+  const user = useMemo(() => {
+    if (!currentUser) return null;
+    return {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      avatar: currentUser.avatar,
+      role: workspaceRole || currentUser.role,
+      departmentId: currentUser.departmentId,
+      createdAt: currentUser.createdAt,
     };
-    load();
-  }, []);
+  }, [currentUser, workspaceRole]);
 
-  const enhanced = useMemo(() => {
-    let list = data.users.map((u) => ({
-      ...u,
-      deptName: departmentNames[u.departmentId] || '—',
+  // Only show workspaces the user is a member of
+  const myWorkspaces = useMemo(() => {
+    if (!currentUser) return [];
+    return workspaces.filter((ws) =>
+      ws.members?.some((m) => m.userId === currentUser.id)
+    );
+  }, [workspaces, currentUser]);
+
+  // Map workspace members to user objects (only workspace-level info)
+  const members = useMemo(() => {
+    return workspaceMembers.map((m) => ({
+      id: m.userId,
+      name: m.name || m.nickname || 'Unknown',
+      email: m.email || '',
+      role: m.role || 'EMPLOYEE',
+      avatar: m.avatar || '',
+      status: m.status || 'ACTIVE',
+      departmentId: activeWorkspace?.id || null,
+      deptName: activeWorkspace?.name || '—',
     }));
-    if (filterRole !== 'all') list = list.filter((u) => u.role === filterRole);
-    return list;
-  }, [data, filterRole]);
+  }, [workspaceMembers, activeWorkspace]);
 
-  if (loading || !user) return <LoadingState label="Loading users..." />;
+  const isOwner = workspaceRole === 'OWNER';
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLoader className="mx-auto h-8 w-8 animate-spin text-primary-600" />
+          <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLock className="mx-auto h-8 w-8 text-slate-400" />
+          <p className="mt-4 text-sm font-medium text-slate-500">Please log in first.</p>
+          <Link href="/login" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Login</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace picker
+  if (!activeWorkspace) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiBriefcase className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Select a workspace</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Choose a workspace to manage its members.</p>
+          <div className="mt-6 space-y-2">
+            {myWorkspaces.map((ws) => (
+              <button
+                key={ws.id}
+                type="button"
+                onClick={() => selectWorkspace(ws.id)}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              >
+                {ws.name}
+              </button>
+            ))}
+            {myWorkspaces.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-sm text-slate-500">
+                No workspaces yet. <Link href="/workspace" className="text-primary-600">Create one</Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Role check: only OWNER can manage members
+  if (!isOwner) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiLock className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Owner access required</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            You need the Owner role in <strong>{activeWorkspace.name}</strong> to manage members.
+          </p>
+          <Link href="/workspace" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Workspace</Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Filter by role
+  const filtered = useMemo(() => {
+    if (filterRole === 'all') return members;
+    return members.filter((m) => m.role === filterRole);
+  }, [members, filterRole]);
 
   const roleCounts = {
-    all: data.users.length,
-    ADMIN: data.users.filter((u) => u.role === 'ADMIN').length,
-    MANAGER: data.users.filter((u) => u.role === 'MANAGER').length,
-    EMPLOYEE: data.users.filter((u) => u.role === 'EMPLOYEE').length,
+    all: members.length,
+    OWNER: members.filter((m) => m.role === 'OWNER').length,
+    VICE_ADMIN: members.filter((m) => m.role === 'VICE_ADMIN').length,
+    MANAGER: members.filter((m) => m.role === 'MANAGER').length,
+    EMPLOYEE: members.filter((m) => m.role === 'EMPLOYEE').length,
+  };
+
+  const roleLabels = {
+    OWNER: 'Owner',
+    VICE_ADMIN: 'Vice Admin',
+    MANAGER: 'Manager',
+    EMPLOYEE: 'Employee',
   };
 
   return (
     <AppShell
       user={user}
-      eyebrow="Admin"
-      title="User management"
-      description={`${roleCounts.all} total users · ${roleCounts.ADMIN} admin · ${roleCounts.MANAGER} manager · ${roleCounts.EMPLOYEE} employees`}
+      eyebrow={activeWorkspace?.name || 'Admin'}
+      title="Member management"
+      description={`${roleCounts.all} members · ${roleCounts.OWNER} owner · ${roleCounts.VICE_ADMIN} vice admin · ${roleCounts.MANAGER} manager · ${roleCounts.EMPLOYEE} employees`}
     >
+      {/* Workspace selector */}
+      <div className="relative mb-4">
+        <button
+          type="button"
+          onClick={() => setShowWsPicker(!showWsPicker)}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >
+          <FiBriefcase className="h-4 w-4" />
+          {activeWorkspace.name}
+          <FiChevronDown className="h-4 w-4" />
+        </button>
+        {showWsPicker && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowWsPicker(false)} />
+            <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1 shadow-lg">
+              {myWorkspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => { selectWorkspace(ws.id); setShowWsPicker(false); }}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                    ws.id === activeWorkspaceId
+                      ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total users" value={roleCounts.all} detail="All accounts" icon={FiUsers} tone="blue" />
-        <StatCard label="Admins" value={roleCounts.ADMIN} detail="System administrators" icon={FiShield} tone="red" />
+        <StatCard label="Total members" value={roleCounts.all} detail="All workspace members" icon={FiUsers} tone="blue" />
+        <StatCard label="Owners" value={roleCounts.OWNER} detail="Workspace owners" icon={FiShield} tone="red" />
         <StatCard label="Managers" value={roleCounts.MANAGER} detail="Department managers" icon={FiUserCheck} tone="amber" />
         <StatCard label="Employees" value={roleCounts.EMPLOYEE} detail="Team members" icon={FiUser} tone="green" />
       </div>
 
-      <Panel title={`Users (${enhanced.length})`} description="Filter by role to manage access" className="mt-6">
+      <Panel title={`Members (${filtered.length})`} description="Filter by role to manage access" className="mt-6">
         <div className="mb-5 flex flex-wrap gap-2">
           {[
             { key: 'all', label: 'All', count: roleCounts.all },
-            { key: 'ADMIN', label: 'Admin', count: roleCounts.ADMIN },
+            { key: 'OWNER', label: 'Owner', count: roleCounts.OWNER },
+            { key: 'VICE_ADMIN', label: 'Vice Admin', count: roleCounts.VICE_ADMIN },
             { key: 'MANAGER', label: 'Manager', count: roleCounts.MANAGER },
             { key: 'EMPLOYEE', label: 'Employee', count: roleCounts.EMPLOYEE },
           ].map((f) => (
@@ -89,38 +213,42 @@ export default function AdminUsers() {
           ))}
         </div>
 
-        {enhanced.length === 0 ? (
-          <EmptyState icon={FiUsers} title="No users found" description="Try a different filter." />
+        {filtered.length === 0 ? (
+          <EmptyState icon={FiUsers} title="No members found" description="Try a different filter or invite new members." />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {enhanced.map((u, idx) => (
+            {filtered.map((m, idx) => (
               <motion.div
-                key={u.id}
+                key={m.id}
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.03 }}
                 className="flex items-center gap-4 rounded-lg border border-slate-200/80 bg-[#fbfcfe] p-4 transition hover:border-primary-200 hover:shadow-sm dark:border-slate-800 dark:bg-[#17212c]"
               >
                 <img
-                  src={u.avatar}
-                  alt={u.name}
+                  src={m.avatar}
+                  alt={m.name}
                   className="h-12 w-12 rounded-lg border border-slate-200 object-cover dark:border-slate-700"
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{u.name}</h3>
-                    <StatusPill tone={roleTone(u.role)}>{u.role}</StatusPill>
+                    <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100">{m.name}</h3>
+                    <StatusPill tone={roleTone(m.role)}>{roleLabels[m.role] || m.role}</StatusPill>
                   </div>
-                  <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
-                    <FiMail className="h-3 w-3" />
-                    {u.email}
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-400">{u.deptName}</p>
+                  {m.email && (
+                    <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                      <FiMail className="h-3 w-3" />
+                      {m.email}
+                    </p>
+                  )}
+                  <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">{m.deptName}</p>
                 </div>
                 <div className={`flex-shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
-                  u.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
+                  m.status === 'ACTIVE'
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                 }`}>
-                  {u.status}
+                  {m.status}
                 </div>
               </motion.div>
             ))}
@@ -132,7 +260,8 @@ export default function AdminUsers() {
 }
 
 function roleTone(role) {
-  if (role === 'ADMIN') return 'red';
+  if (role === 'OWNER') return 'red';
+  if (role === 'VICE_ADMIN') return 'purple';
   if (role === 'MANAGER') return 'amber';
   return 'blue';
 }

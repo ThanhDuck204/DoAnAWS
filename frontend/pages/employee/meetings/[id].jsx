@@ -36,7 +36,7 @@ export default function EmployeeMeetingDetail() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#eef3f8]">
+      <div className="flex min-h-screen items-center justify-center bg-[#eef3f8] dark:bg-slate-900">
         <FiLoader className="h-8 w-8 animate-spin text-primary-600" />
       </div>
     );
@@ -44,8 +44,8 @@ export default function EmployeeMeetingDetail() {
 
   if (!meeting) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-[#eef3f8] gap-4">
-        <p className="text-lg font-bold text-slate-700">Meeting not found</p>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#eef3f8] dark:bg-slate-900 gap-4">
+        <p className="text-lg font-bold text-slate-700 dark:text-slate-200">Meeting not found</p>
         <button onClick={() => router.back()} className="rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">
           Go back
         </button>
@@ -54,17 +54,17 @@ export default function EmployeeMeetingDetail() {
   }
 
   return (
-    <div className="min-h-screen bg-[#eef3f8]">
+    <div className="min-h-screen bg-[#eef3f8] dark:bg-slate-900">
       {/* Top bar */}
-      <div className="topbar-glass sticky top-0 z-20 border-b border-slate-200/80">
+      <div className="topbar-glass sticky top-0 z-20 border-b border-slate-200/80 dark:border-slate-700/80">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-5 lg:px-8">
           <div className="flex items-center gap-4">
-            <button onClick={() => router.back()} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50">
+            <button onClick={() => router.back()} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400 dark:hover:bg-slate-800">
               <FiArrowLeft className="h-5 w-5" />
             </button>
             <div>
               <p className="text-xs font-semibold text-primary-600">Employee view</p>
-              <h1 className="text-lg font-bold text-slate-900">{meeting.title}</h1>
+              <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">{meeting.title}</h1>
             </div>
           </div>
           <Link href="/employee/meetings" className="text-sm font-semibold text-primary-600 hover:text-primary-700">
@@ -76,11 +76,11 @@ export default function EmployeeMeetingDetail() {
       <main className="mx-auto max-w-4xl px-5 py-8">
         <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
           {/* Meeting info */}
-          <div className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm">
+          <div className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-700/80 dark:bg-slate-900">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-xl font-bold text-slate-900">{meeting.title}</h2>
-                <p className="mt-2 text-sm text-slate-500">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{meeting.title}</h2>
+                <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                   {meeting.departmentId === 'dept-1' ? 'Frontend Team' :
                    meeting.departmentId === 'dept-2' ? 'Backend Team' :
                    meeting.departmentId === 'dept-3' ? 'AI Team' : 'DevOps Team'}
@@ -88,7 +88,7 @@ export default function EmployeeMeetingDetail() {
               </div>
               <StatusPill tone={statusTone(meeting.status)}>{meeting.status}</StatusPill>
             </div>
-            <div className="mt-5 flex flex-wrap gap-5 text-sm text-slate-500">
+            <div className="mt-5 flex flex-wrap gap-5 text-sm text-slate-500 dark:text-slate-400">
               <span className="inline-flex items-center gap-2">
                 <FiCalendar className="h-4 w-4" />
                 {new Date(meeting.createdAt).toLocaleDateString()}
@@ -106,24 +106,24 @@ export default function EmployeeMeetingDetail() {
 
           {/* Summary */}
           {meeting.summary && (
-            <div className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-3">AI Summary</h3>
-              <p className="text-sm leading-7 text-slate-600">{meeting.summary}</p>
+            <div className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-700/80 dark:bg-slate-900">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">AI Summary</h3>
+              <p className="text-sm leading-7 text-slate-600 dark:text-slate-200">{meeting.summary}</p>
             </div>
           )}
 
           {/* Transcript */}
           {meeting.transcriptText && (
-            <div className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm">
-              <h3 className="text-lg font-bold text-slate-900 mb-3">Transcript</h3>
-              <p className="text-sm leading-7 text-slate-600 whitespace-pre-wrap">
+            <div className="rounded-lg border border-slate-200/80 bg-white p-6 shadow-sm dark:border-slate-700/80 dark:bg-slate-900">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-3">Transcript</h3>
+              <p className="text-sm leading-7 text-slate-600 dark:text-slate-200 whitespace-pre-wrap">
                 {showFullTranscript ? meeting.transcriptText : meeting.transcriptText.slice(0, 4000)}
               </p>
               {!showFullTranscript && meeting.transcriptText.length > 4000 && (
                 <button
                   type="button"
                   onClick={() => setShowFullTranscript(true)}
-                  className="mt-4 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                  className="mt-4 rounded-lg border border-slate-200 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   Load full transcript
                 </button>

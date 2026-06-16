@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   FiAlertTriangle,
@@ -8,69 +9,188 @@ import {
   FiCheckCircle,
   FiClock,
   FiLoader,
-  FiSliders,
+  FiLock,
   FiUser,
-  FiUsers,
+  FiChevronDown,
 } from 'react-icons/fi';
 import AppShell, { Panel, StatCard, StatusPill, LoadingState, EmptyState } from '../../src/components/layout/AppShell';
-import { getUsers, getTasks as getMockTasks, getDepartments } from '../../src/services/legacyDataService';
+import { useWorkspace } from '../../src/context/WorkspaceContext';
 
 export default function AdminTasks() {
-  const [user, setUser] = useState(null);
-  const [data, setData] = useState({ users: [], tasks: [], departments: [] });
-  const [loading, setLoading] = useState(true);
+  const {
+    currentUser, loading, workspaces,
+    activeWorkspace, activeWorkspaceId, selectWorkspace,
+    workspaceRole, workspaceTasks, workspaceMembers,
+  } = useWorkspace();
   const [filterStatus, setFilterStatus] = useState('all');
+  const [showWsPicker, setShowWsPicker] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const [users, tasks, departments] = await Promise.all([
-        getUsers(), getMockTasks(), getDepartments()
-      ]);
-      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-      const fallback = users.find((u) => u.role === 'ADMIN');
-      const currentUser = storedUser?.role === 'ADMIN' ? { ...fallback, ...storedUser } : fallback;
-      await new Promise((r) => setTimeout(r, 300));
-      setUser(currentUser);
-      setData({ users, tasks, departments });
-      setLoading(false);
+  const user = useMemo(() => {
+    if (!currentUser) return null;
+    return {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      avatar: currentUser.avatar,
+      role: workspaceRole || currentUser.role,
+      departmentId: currentUser.departmentId,
+      createdAt: currentUser.createdAt,
     };
-    load();
-  }, []);
+  }, [currentUser, workspaceRole]);
+
+  const myWorkspaces = useMemo(() => {
+    if (!currentUser) return [];
+    return workspaces.filter((ws) =>
+      ws.members?.some((m) => m.userId === currentUser.id)
+    );
+  }, [workspaces, currentUser]);
+
+  const isOwner = workspaceRole === 'OWNER';
+
+  // Scope tasks to active workspace
+  const scopedTasks = useMemo(
+    () => (workspaceTasks || []).filter(
+      (t) => t.workspaceId === activeWorkspace?.id || t.departmentId === activeWorkspace?.id
+    ),
+    [workspaceTasks, activeWorkspace]
+  );
+
+  // Build assignee name map from workspaceMembers
+  const memberMap = useMemo(() => {
+    const map = {};
+    workspaceMembers.forEach((m) => {
+      map[m.userId] = m.name || m.nickname || 'Unknown';
+    });
+    return map;
+  }, [workspaceMembers]);
 
   const enhanced = useMemo(() => {
-    if (!data.tasks.length) return [];
-    const userMap = data.users.reduce((acc, u) => { acc[u.id] = u; return acc; }, {});
-    const deptMap = data.departments.reduce((acc, d) => { acc[d.id] = d; return acc; }, {});
-
-    let list = data.tasks.map((t) => ({
+    let list = scopedTasks.map((t) => ({
       ...t,
-      assigneeName: userMap[t.assigneeId]?.name || 'Unassigned',
-      deptName: deptMap[t.departmentId]?.name || '—',
+      assigneeName: memberMap[t.assigneeId] || 'Unassigned',
     }));
-
     if (filterStatus !== 'all') list = list.filter((t) => t.status === filterStatus);
     return list;
-  }, [data, filterStatus]);
+  }, [scopedTasks, filterStatus, memberMap]);
 
-  if (loading || !user) return <LoadingState label="Loading tasks..." />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLoader className="mx-auto h-8 w-8 animate-spin text-primary-600" />
+          <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const total = data.tasks.length;
-  const completed = data.tasks.filter((t) => t.status === 'COMPLETED').length;
-  const inProgress = data.tasks.filter((t) => t.status === 'IN_PROGRESS').length;
-  const overdue = data.tasks.filter(
+  if (!currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLock className="mx-auto h-8 w-8 text-slate-400" />
+          <p className="mt-4 text-sm font-medium text-slate-500">Please log in first.</p>
+          <Link href="/login" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Login</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace picker
+  if (!activeWorkspace) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiBriefcase className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Select a workspace</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Choose a workspace to view its tasks.</p>
+          <div className="mt-6 space-y-2">
+            {myWorkspaces.map((ws) => (
+              <button
+                key={ws.id}
+                type="button"
+                onClick={() => selectWorkspace(ws.id)}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              >
+                {ws.name}
+              </button>
+            ))}
+            {myWorkspaces.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-sm text-slate-500">
+                No workspaces yet. <Link href="/workspace" className="text-primary-600">Create one</Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiLock className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Owner access required</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            You need the Owner role in <strong>{activeWorkspace.name}</strong> to view all tasks.
+          </p>
+          <Link href="/workspace" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Workspace</Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const total = scopedTasks.length;
+  const completed = scopedTasks.filter((t) => t.status === 'COMPLETED').length;
+  const inProgress = scopedTasks.filter((t) => t.status === 'IN_PROGRESS').length;
+  const overdue = scopedTasks.filter(
     (t) => t.deadline && new Date(t.deadline) < new Date() && t.status !== 'COMPLETED'
   ).length;
 
   return (
     <AppShell
       user={user}
-      eyebrow="Admin"
+      eyebrow={activeWorkspace?.name || 'Admin'}
       title="All tasks"
-      description="Company-wide task view across all departments."
+      description={`${total} tasks · ${completed} completed · ${inProgress} in progress · ${overdue} overdue`}
     >
+      {/* Workspace selector */}
+      <div className="relative mb-4">
+        <button
+          type="button"
+          onClick={() => setShowWsPicker(!showWsPicker)}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >
+          <FiBriefcase className="h-4 w-4" />
+          {activeWorkspace.name}
+          <FiChevronDown className="h-4 w-4" />
+        </button>
+        {showWsPicker && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowWsPicker(false)} />
+            <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1 shadow-lg">
+              {myWorkspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => { selectWorkspace(ws.id); setShowWsPicker(false); }}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                    ws.id === activeWorkspaceId
+                      ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Total tasks" value={total} detail="Across all departments" icon={FiBriefcase} tone="blue" />
+        <StatCard label="Total tasks" value={total} detail="Across workspace" icon={FiBriefcase} tone="blue" />
         <StatCard label="Completed" value={completed} detail={`${total ? Math.round((completed / total) * 100) : 0}% completion`} icon={FiCheckCircle} tone="green" />
         <StatCard label="In progress" value={inProgress} detail="Actively worked on" icon={FiBarChart2} tone="amber" />
         <StatCard label="Overdue" value={overdue} detail="Needs attention" icon={FiAlertTriangle} tone={overdue ? 'red' : 'slate'} />
@@ -80,7 +200,7 @@ export default function AdminTasks() {
         <div className="mb-5 flex flex-wrap gap-2">
           {[
             { key: 'all', label: 'All', count: total },
-            { key: 'PENDING', label: 'Pending', count: data.tasks.filter((t) => t.status === 'PENDING').length },
+            { key: 'PENDING', label: 'Pending', count: scopedTasks.filter((t) => t.status === 'PENDING').length },
             { key: 'IN_PROGRESS', label: 'In Progress', count: inProgress },
             { key: 'COMPLETED', label: 'Completed', count: completed },
           ].map((f) => (
@@ -121,10 +241,6 @@ export default function AdminTasks() {
                     <span className="inline-flex items-center gap-1">
                       <FiUser className="h-3 w-3" />
                       {task.assigneeName}
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <FiBriefcase className="h-3 w-3" />
-                      {task.deptName}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <FiCalendar className="h-3 w-3" />

@@ -563,7 +563,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
         ...VOICE_AUDIO_CONFIG,
         ...settings,
         noiseSuppressionMode,
-        enabled: noiseSuppressionMode === 'browser-plus-webaudio' || noiseSuppressionMode === 'future-krisp',
+        enabled: noiseSuppressionMode !== 'off' && noiseSuppressionMode !== 'browser-only',
         micGain: settings.micGain ?? settings.micBoost ?? VOICE_AUDIO_CONFIG.micGain,
         noiseGateThreshold: settings.noiseGateThreshold ?? VOICE_AUDIO_CONFIG.noiseGateThreshold,
         noiseGateReduction: settings.noiseGateReduction ?? VOICE_AUDIO_CONFIG.noiseGateReduction,
@@ -966,11 +966,11 @@ export default function VoiceChannelView({ channel: propChannel }) {
 
   if (!channel) {
     return (
-      <div className="flex h-full items-center justify-center bg-white p-8 text-center">
-        <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-8 py-10">
+      <div className="flex h-full items-center justify-center bg-white dark:bg-slate-900 p-8 text-center">
+        <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-8 py-10">
           <FiHeadphones className="mx-auto h-8 w-8 text-slate-300" />
-          <p className="mt-3 text-sm font-black text-slate-700">Select a voice channel</p>
-          <p className="mt-1 text-xs text-slate-400">Voice presence and recording controls will appear here.</p>
+          <p className="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">Select a voice channel</p>
+          <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Voice presence and recording controls will appear here.</p>
         </div>
       </div>
     );
@@ -978,11 +978,11 @@ export default function VoiceChannelView({ channel: propChannel }) {
 
   if (!canAccess) {
     return (
-      <div className="flex h-full items-center justify-center bg-white p-8 text-center">
-        <div className="max-w-md rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-8 py-10">
+      <div className="flex h-full items-center justify-center bg-white dark:bg-slate-900 p-8 text-center">
+        <div className="max-w-md rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-8 py-10">
           <FiLock className="mx-auto h-9 w-9 text-slate-300" />
-          <p className="mt-3 text-sm font-black text-slate-700">No access to {channel.name}</p>
-          <p className="mt-1 text-xs leading-5 text-slate-400">
+          <p className="mt-3 text-sm font-black text-slate-700 dark:text-slate-200">No access to {channel.name}</p>
+          <p className="mt-1 text-xs leading-5 text-slate-400 dark:text-slate-500">
             You do not have access to this voice channel. Ask the workspace Owner to add your team or user.
           </p>
         </div>
@@ -991,17 +991,17 @@ export default function VoiceChannelView({ channel: propChannel }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
+    <div className="flex h-full min-h-0 flex-col bg-white dark:bg-slate-900">
       {/* ─── Header ──────────────────────────────────────── */}
-      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 px-5 py-3.5">
+      <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 dark:border-slate-700 px-5 py-3.5">
         <div className="min-w-0">
-          <h2 className="flex items-center gap-2 text-sm font-black text-slate-900">
+          <h2 className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-slate-100">
             <FiHeadphones className="h-4 w-4 text-blue-600" />
             {channel.name}
-            {channel.isLocked ? <FiLock className="h-3.5 w-3.5 text-slate-400" /> : null}
+            {channel.isLocked ? <FiLock className="h-3.5 w-3.5 text-slate-400 dark:text-slate-500" /> : null}
             {activeRecording ? <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-black text-rose-600">Recording</span> : null}
           </h2>
-          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400">
+          <p className="mt-0.5 truncate text-[11px] font-medium text-slate-400 dark:text-slate-500">
             {scopeLabel}
             {allowedTeamNames.length ? ` · ${allowedTeamNames.join(', ')}` : ''}
             {channel.allowRecording ? ' · Recording enabled' : ' · Recording disabled'}
@@ -1016,7 +1016,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
             label="Voice server ping"
           />
           {!joined || voicePeerStatus === 'idle' ? (
-            <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-black text-slate-500">
+            <span className="rounded-full bg-slate-100 dark:bg-slate-700 px-2.5 py-1 text-xs font-black text-slate-500 dark:text-slate-400">
               Not joined
             </span>
           ) : signalingStatus === 'reconnecting' ? (
@@ -1044,7 +1044,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
           <button
             type="button"
             onClick={() => setShowVoiceSettings(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200"
             title="Voice quality settings"
           >
             <FiSettings className="h-4 w-4" />
@@ -1053,7 +1053,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
             <button
               type="button"
               onClick={() => setSettingsOpen(true)}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 dark:text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200"
               title="Voice channel permissions"
             >
               <FiLock className="h-4 w-4" />
@@ -1077,7 +1077,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                 </p>
               </div>
               {estimatedSize > warningVoiceRecordingSizeBytes ? (
-                <span className="rounded-full bg-white px-3 py-1 text-[11px] font-black text-rose-600">
+                <span className="rounded-full bg-white dark:bg-slate-800 px-3 py-1 text-[11px] font-black text-rose-600">
                   Large recording warning
                 </span>
               ) : null}
@@ -1123,18 +1123,18 @@ export default function VoiceChannelView({ channel: propChannel }) {
         {/* ─── Main grid: Participants + Controls ────────── */}
         <section className="grid gap-4 lg:grid-cols-[1fr_280px]">
           {/* ─── Participants ────────────────────────────── */}
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 p-4">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500">
+              <h3 className="flex items-center gap-2 text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 <FiUsers className="h-4 w-4" /> Participants
               </h3>
-              <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-500">{participants.length}</span>
+              <span className="rounded-full bg-white dark:bg-slate-800 px-2 py-0.5 text-[10px] font-black text-slate-500 dark:text-slate-400">{participants.length}</span>
             </div>
             {participants.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 bg-white px-5 py-8 text-center">
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-5 py-8 text-center">
                 <FiHeadphones className="mx-auto h-7 w-7 text-slate-300" />
-                <p className="mt-2 text-sm font-black text-slate-600">No one is in voice</p>
-                <p className="mt-1 text-xs text-slate-400">Join to start presence for this channel.</p>
+                <p className="mt-2 text-sm font-black text-slate-600 dark:text-slate-300">No one is in voice</p>
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Join to start presence for this channel.</p>
               </div>
             ) : (
               <div className="space-y-2">
@@ -1180,8 +1180,8 @@ export default function VoiceChannelView({ channel: propChannel }) {
           </div>
 
           {/* ─── Controls ────────────────────────────────── */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Controls</h3>
+          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
+            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Controls</h3>
             <div className="mt-4 grid gap-2">
               {/* Join / Leave */}
               {joined ? (
@@ -1207,7 +1207,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                 type="button"
                 disabled={!joined}
                 onClick={toggleMute}
-                className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-3 text-sm font-black text-slate-600 dark:text-slate-300 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {muted ? (
                   <span className="flex items-center justify-center gap-2"><FiMicOff className="h-4 w-4" /> Unmute Mic</span>
@@ -1223,7 +1223,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                 className={`rounded-xl border px-4 py-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
                   voiceSettings.deafen
                     ? 'border-amber-200 bg-amber-50 text-amber-700'
-                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
                 }`}
               >
                 <span className="flex items-center justify-center gap-2">
@@ -1242,7 +1242,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                 <div className={`rounded-xl px-4 py-2 text-center text-xs font-black transition ${
                   pttActive
                     ? 'bg-emerald-50 text-emerald-700 ring-2 ring-emerald-300'
-                    : 'bg-slate-50 text-slate-400'
+                    : 'bg-slate-50 dark:bg-slate-800 text-slate-400 dark:text-slate-500'
                 }`}>
                   {pttActive ? '🔊 Speaking (PTT)' : '⌨️ Hold Space to talk'}
                 </div>
@@ -1266,7 +1266,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                     voiceConnectionState === 'connected' && !muted && !voiceSettings.deafen
                       ? 'text-emerald-700'
                       : muted || voiceSettings.deafen
-                        ? 'text-slate-500'
+                        ? 'text-slate-500 dark:text-slate-400'
                         : 'text-amber-700'
                   }>
                     {voiceConnectionState === 'connected' && !muted && !voiceSettings.deafen
@@ -1285,7 +1285,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                   </span>
                   {/* Latency */}
                   {voiceConnectionState === 'connected' && socketLatencyMs != null ? (
-                    <span className="ml-auto text-[10px] text-slate-400">{socketLatencyMs}ms</span>
+                    <span className="ml-auto text-[10px] text-slate-400 dark:text-slate-500">{socketLatencyMs}ms</span>
                   ) : null}
                 </div>
               ) : null}
@@ -1328,7 +1328,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
             </div>
 
             {/* Recording metrics */}
-            <div className="mt-4 rounded-xl bg-slate-50 p-3 text-xs font-semibold text-slate-500">
+            <div className="mt-4 rounded-xl bg-slate-50 dark:bg-slate-800 p-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
               <div
                 className="mb-2 flex items-center justify-between"
                 title={voiceConnected && socketLatencyMs ? `Voice ping: ${socketLatencyMs}ms - ${networkQuality.label}` : 'Measuring voice ping...'}
@@ -1341,7 +1341,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                       ? 'text-amber-600'
                       : networkQuality.key === 'poor'
                         ? 'text-rose-600'
-                        : 'text-slate-400'
+                        : 'text-slate-400 dark:text-slate-500'
                 }>
                   {networkQuality.label}{socketLatencyMs ? ` · ${socketLatencyMs}ms` : ''}
                 </span>
@@ -1355,7 +1355,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                 <span>{formatBytes(estimatedSize)}</span>
               </div>
               {activeRecording ? (
-                <div className={`mt-2 rounded-lg px-3 py-2 ${recordingMetrics.peakLevel >= 0.98 || recordingMetrics.clippingFrames > 2 ? 'bg-rose-50 text-rose-600' : 'bg-white text-slate-500'}`}>
+                <div className={`mt-2 rounded-lg px-3 py-2 ${recordingMetrics.peakLevel >= 0.98 || recordingMetrics.clippingFrames > 2 ? 'bg-rose-50 text-rose-600' : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400'}`}>
                   <div className="flex items-center justify-between">
                     <span>Rec peak / RMS</span>
                     <span>{(recordingMetrics.peakLevel ?? 0).toFixed(3)} / {(recordingMetrics.rmsLevel ?? 0).toFixed(3)}</span>
@@ -1376,8 +1376,8 @@ export default function VoiceChannelView({ channel: propChannel }) {
                   ) : null}
                 </div>
               ) : null}
-              <p className="mt-3 text-[11px] leading-5 text-slate-400">Max AI upload size: 400MB</p>
-              <p className="mt-2 text-[11px] leading-5 text-slate-400">
+              <p className="mt-3 text-[11px] leading-5 text-slate-400 dark:text-slate-500">Max AI upload size: 400MB</p>
+              <p className="mt-2 text-[11px] leading-5 text-slate-400 dark:text-slate-500">
                 Browser recording uses WebM/Opus. Convert to MP3 later by backend if needed. Use headphones to reduce echo/noise in recordings.
               </p>
               {activeRecording?.recordingMode === 'MIXED_ROOM' ? (
@@ -1394,7 +1394,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
 
             {/* Mic status */}
             {joined && (
-              <div className="mt-3 rounded-xl bg-slate-50 p-3 text-[11px] font-semibold text-slate-400">
+              <div className="mt-3 rounded-xl bg-slate-50 dark:bg-slate-800 p-3 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
                 <div className="flex items-center justify-between">
                   <span>Mic status</span>
                   <span className={muted ? 'text-rose-500' : 'text-emerald-600'}>
@@ -1415,14 +1415,14 @@ export default function VoiceChannelView({ channel: propChannel }) {
         {/* ─── Recent Recordings ────────────────────────── */}
         <section className="mt-5">
           <div className="mb-3 flex items-center justify-between">
-            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500">Recent Recordings</h3>
-            <span className="text-[11px] font-bold text-slate-400">{records.length} records</span>
+            <h3 className="text-xs font-black uppercase tracking-wide text-slate-500 dark:text-slate-400">Recent Recordings</h3>
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500">{records.length} records</span>
           </div>
           {records.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-5 py-8 text-center">
+            <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-5 py-8 text-center">
               <FiClock className="mx-auto h-7 w-7 text-slate-300" />
-              <p className="mt-2 text-sm font-black text-slate-600">No recordings yet</p>
-              <p className="mt-1 text-xs text-slate-400">Completed recordings will appear here with playback, download, and AI actions.</p>
+              <p className="mt-2 text-sm font-black text-slate-600 dark:text-slate-300">No recordings yet</p>
+              <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">Completed recordings will appear here with playback, download, and AI actions.</p>
             </div>
           ) : (
             <div className="grid gap-3 xl:grid-cols-2">
@@ -1442,11 +1442,11 @@ export default function VoiceChannelView({ channel: propChannel }) {
                 ].includes(job.status);
                 const jobFailed = job?.status === AUDIO_PROCESSING_STATUS.FAILED;
                 return (
-                  <article key={record.id} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <article key={record.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4 shadow-sm">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h4 className="truncate text-sm font-black text-slate-900">{record.title}</h4>
-                        <p className="mt-1 text-[11px] font-semibold text-slate-400">
+                        <h4 className="truncate text-sm font-black text-slate-900 dark:text-slate-100">{record.title}</h4>
+                        <p className="mt-1 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
                           {formatDuration(record.durationSeconds)} - {formatBytes(record.sizeBytes)} - {formatAudioFormat(record.format)} {record.bitrate ? `- ${Math.round(record.bitrate / 1000)} kbps` : ''}
                         </p>
                         {record.peakLevel != null ? (
@@ -1458,7 +1458,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                       {record.autoStopped ? <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-600">Auto stopped</span> : null}
                     </div>
                     {record.objectUrl ? (
-                      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+                      <div className="mt-3 rounded-lg border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 p-3">
                         <audio
                           className="w-full"
                           controls
@@ -1468,7 +1468,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                             if (node) node.volume = Math.max(0, Math.min(1, playbackGain));
                           }}
                         />
-                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500">
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] font-bold text-slate-500 dark:text-slate-400">
                           <span>Preview volume</span>
                           <input
                             type="range"
@@ -1479,34 +1479,34 @@ export default function VoiceChannelView({ channel: propChannel }) {
                               const value = Number(event.target.value) / 100;
                               setPlaybackGainByRecord((prev) => ({ ...prev, [record.id]: value }));
                             }}
-                            className="h-1 w-32 cursor-pointer appearance-none rounded-full bg-slate-200 accent-blue-500"
+                            className="h-1 w-32 cursor-pointer appearance-none rounded-full bg-slate-200 dark:bg-slate-700 accent-blue-500"
                           />
                           <span>{Math.round(playbackGain * 100)}%</span>
                           <button
                             type="button"
                             onClick={() => setPlaybackGainByRecord((prev) => ({ ...prev, [record.id]: 1.2 }))}
-                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 font-black text-slate-600 hover:bg-slate-100"
+                            className="rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-2 py-1 font-black text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
                           >
                             Normalize preview
                           </button>
                         </div>
                       </div>
                     ) : (
-                      <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-400">Audio object is not available.</div>
+                      <div className="mt-3 rounded-lg bg-slate-50 dark:bg-slate-800 px-3 py-2 text-xs font-semibold text-slate-400 dark:text-slate-500">Audio object is not available.</div>
                     )}
                     {extensionMismatch ? <p className="mt-2 text-xs font-semibold text-rose-600">File extension does not match the recorded MIME type.</p> : null}
                     {tooLargeForAI ? <p className="mt-2 text-xs font-semibold text-rose-600">Recording exceeds 400MB and cannot be sent to AI.</p> : null}
                     {nearAiLimit && !tooLargeForAI ? <p className="mt-2 text-xs font-semibold text-amber-600">Large recording warning: AI processing may be slower near 400MB.</p> : null}
                     {record.format?.includes('webm') ? (
-                      <p className="mt-2 text-[11px] leading-5 text-slate-400">Browser recording uses WebM/Opus. Convert to MP3 later by backend if needed.</p>
+                      <p className="mt-2 text-[11px] leading-5 text-slate-400 dark:text-slate-500">Browser recording uses WebM/Opus. Convert to MP3 later by backend if needed.</p>
                     ) : null}
                     {job ? (
-                      <div className="mt-3 rounded-lg bg-slate-50 p-3">
-                        <div className="flex items-center justify-between text-[11px] font-black text-slate-500">
+                      <div className="mt-3 rounded-lg bg-slate-50 dark:bg-slate-800 p-3">
+                        <div className="flex items-center justify-between text-[11px] font-black text-slate-500 dark:text-slate-400">
                           <span>MP3 conversion: {job.status}</span>
                           <span>{job.progress || 0}%</span>
                         </div>
-                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200">
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
                           <div className="h-full rounded-full bg-blue-600 transition-all" style={{ width: `${job.progress || 0}%` }} />
                         </div>
                         {jobFailed ? <p className="mt-2 text-xs font-semibold text-rose-600">{job.errorMessage || 'MP3 conversion failed. Please try again.'}</p> : null}
@@ -1516,7 +1516,7 @@ export default function VoiceChannelView({ channel: propChannel }) {
                       <a
                         href={record.objectUrl || '#'}
                         download={record.fileName}
-                        className={`inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-50 ${record.objectUrl ? '' : 'pointer-events-none opacity-50'}`}
+                        className={`inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-black text-slate-600 dark:text-slate-300 transition hover:bg-slate-50 dark:hover:bg-slate-800 ${record.objectUrl ? '' : 'pointer-events-none opacity-50'}`}
                       >
                         <FiDownload className="h-3.5 w-3.5" /> Download Original
                       </a>
@@ -1533,13 +1533,13 @@ export default function VoiceChannelView({ channel: propChannel }) {
                           type="button"
                           disabled={jobRunning}
                           onClick={() => handleConvertToMp3(record)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-black text-slate-600 dark:text-slate-300 transition hover:bg-slate-50 dark:hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <FiRadio className="h-3.5 w-3.5" /> Convert to MP3
                         </button>
                       )}
                       {jobRunning ? (
-                        <button type="button" onClick={() => handleCancelConversion(job.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-black text-slate-500 transition hover:bg-slate-50">Cancel</button>
+                        <button type="button" onClick={() => handleCancelConversion(job.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-3 py-2 text-xs font-black text-slate-500 dark:text-slate-400 transition hover:bg-slate-50 dark:hover:bg-slate-800">Cancel</button>
                       ) : null}
                       {jobFailed ? (
                         <button type="button" onClick={() => handleRetryConversion(job.id)} className="inline-flex items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-black text-rose-600 transition hover:bg-rose-100">Retry</button>

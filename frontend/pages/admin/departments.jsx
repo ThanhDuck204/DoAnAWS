@@ -1,77 +1,191 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { FiBriefcase, FiLoader, FiPlus, FiUsers, FiCheckCircle } from 'react-icons/fi';
+import { FiBriefcase, FiChevronDown, FiLoader, FiLock, FiUsers, FiCheckCircle, FiUser, FiPlus } from 'react-icons/fi';
 import AppShell, { Panel, StatCard, StatusPill, LoadingState, EmptyState } from '../../src/components/layout/AppShell';
-import { getDepartments as getMockDepartments, getUsers, getTasks as getMockTasks } from '../../src/services/legacyDataService';
+import { useWorkspace } from '../../src/context/WorkspaceContext';
 
 export default function AdminDepartments() {
-  const [user, setUser] = useState(null);
-  const [data, setData] = useState({ departments: [], users: [], tasks: [] });
-  const [loading, setLoading] = useState(true);
+  const {
+    currentUser, loading, workspaces,
+    activeWorkspace, activeWorkspaceId, selectWorkspace,
+    workspaceRole, workspaceTeams, workspaceMembers,
+  } = useWorkspace();
+  const [showWsPicker, setShowWsPicker] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const [departments, users, tasks] = await Promise.all([
-        getMockDepartments(), getUsers(), getMockTasks()
-      ]);
-      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-      const fallback = users.find((u) => u.role === 'ADMIN');
-      const currentUser = storedUser?.role === 'ADMIN' ? { ...fallback, ...storedUser } : fallback;
-      await new Promise((r) => setTimeout(r, 300));
-      setUser(currentUser);
-      setData({ departments, users, tasks });
-      setLoading(false);
+  const user = useMemo(() => {
+    if (!currentUser) return null;
+    return {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      avatar: currentUser.avatar,
+      role: workspaceRole || currentUser.role,
+      departmentId: currentUser.departmentId,
+      createdAt: currentUser.createdAt,
     };
-    load();
-  }, []);
+  }, [currentUser, workspaceRole]);
 
-  const enhanced = useMemo(() => {
-    if (!data.departments.length) return [];
-    return data.departments.map((dept) => {
-      const manager = data.users.find((u) => u.id === dept.managerId);
-      const members = data.users.filter((u) => dept.memberIds.includes(u.id));
-      const deptTasks = data.tasks.filter((t) => t.departmentId === dept.id);
+  // Only show workspaces the user is a member of
+  const myWorkspaces = useMemo(() => {
+    if (!currentUser) return [];
+    return workspaces.filter((ws) =>
+      ws.members?.some((m) => m.userId === currentUser.id)
+    );
+  }, [workspaces, currentUser]);
+
+  const isOwner = workspaceRole === 'OWNER';
+
+  // Enhance teams with computed metrics
+  const enhancedTeams = useMemo(() => {
+    if (!workspaceTeams || !workspaceMembers) return [];
+    return workspaceTeams.map((team) => {
+      const teamMemberList = workspaceMembers.filter((m) =>
+        (team.memberIds || []).includes(m.userId)
+      );
+      const teamLead = workspaceMembers.find((m) =>
+        m.userId === team.leadId
+      );
       return {
-        ...dept,
-        managerName: manager?.name || 'Unassigned',
-        memberCount: members.length,
-        taskCount: deptTasks.length,
-        completed: deptTasks.filter((t) => t.status === 'COMPLETED').length,
-        progress: deptTasks.length
-          ? Math.round(deptTasks.reduce((s, t) => s + t.progress, 0) / deptTasks.length)
-          : 0,
+        id: team.id,
+        name: team.name || team.title || 'Unnamed Team',
+        description: team.description || '',
+        memberCount: teamMemberList.length,
+        members: teamMemberList,
+        leadName: teamLead?.name || teamLead?.nickname || 'Unassigned',
+        channelCount: (team.channels || []).length,
       };
     });
-  }, [data]);
+  }, [workspaceTeams, workspaceMembers]);
 
-  if (loading || !user) return <LoadingState label="Loading departments..." />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLoader className="mx-auto h-8 w-8 animate-spin text-primary-600" />
+          <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
 
-  const totalMembers = enhanced.reduce((s, d) => s + d.memberCount, 0);
-  const totalTasks = enhanced.reduce((s, d) => s + d.taskCount, 0);
+  if (!currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLock className="mx-auto h-8 w-8 text-slate-400" />
+          <p className="mt-4 text-sm font-medium text-slate-500">Please log in first.</p>
+          <Link href="/login" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Login</Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Workspace picker
+  if (!activeWorkspace) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiBriefcase className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Select a workspace</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Choose a workspace to manage its teams.</p>
+          <div className="mt-6 space-y-2">
+            {myWorkspaces.map((ws) => (
+              <button
+                key={ws.id}
+                type="button"
+                onClick={() => selectWorkspace(ws.id)}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              >
+                {ws.name}
+              </button>
+            ))}
+            {myWorkspaces.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-sm text-slate-500">
+                No workspaces yet. <Link href="/workspace" className="text-primary-600">Create one</Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Role check: only OWNER can manage teams
+  if (!isOwner) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiLock className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Owner access required</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            You need the Owner role in <strong>{activeWorkspace.name}</strong> to manage teams.
+          </p>
+          <Link href="/workspace" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Workspace</Link>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const totalMembers = workspaceMembers.length;
+  const totalTeams = enhancedTeams.length;
 
   return (
     <AppShell
       user={user}
-      eyebrow="Admin"
-      title="Departments"
-      description={`${enhanced.length} departments · ${totalMembers} total members · ${totalTasks} tasks tracked`}
+      eyebrow={activeWorkspace?.name || 'Admin'}
+      title="Team management"
+      description={`${totalTeams} teams · ${totalMembers} total members in ${activeWorkspace.name}`}
     >
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Departments" value={enhanced.length} detail="Operating units" icon={FiBriefcase} tone="blue" />
-        <StatCard label="Members" value={totalMembers} detail="Across departments" icon={FiUsers} tone="green" />
-        <StatCard label="Total tasks" value={totalTasks} detail="All departments" icon={FiCheckCircle} tone="amber" />
-        <StatCard label="Avg completion" value={`${enhanced.length ? Math.round(enhanced.reduce((s, d) => s + d.progress, 0) / enhanced.length) : 0}%`} detail="Department average" icon={FiBriefcase} tone="slate" />
+      {/* Workspace selector */}
+      <div className="relative mb-4">
+        <button
+          type="button"
+          onClick={() => setShowWsPicker(!showWsPicker)}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >
+          <FiBriefcase className="h-4 w-4" />
+          {activeWorkspace.name}
+          <FiChevronDown className="h-4 w-4" />
+        </button>
+        {showWsPicker && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowWsPicker(false)} />
+            <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1 shadow-lg">
+              {myWorkspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => { selectWorkspace(ws.id); setShowWsPicker(false); }}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                    ws.id === activeWorkspaceId
+                      ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
       </div>
 
-      <Panel title="All departments" description="Overview of every department and its metrics" className="mt-6">
-        {enhanced.length === 0 ? (
-          <EmptyState icon={FiBriefcase} title="No departments" description="Create your first department to get started." />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Teams" value={totalTeams} detail="Operating units" icon={FiBriefcase} tone="blue" />
+        <StatCard label="Members" value={totalMembers} detail="Across workspace" icon={FiUsers} tone="green" />
+        <StatCard label="Avg team size" value={totalTeams ? Math.round(totalMembers / totalTeams) : 0} detail="Members per team" icon={FiUser} tone="amber" />
+        <StatCard label="Channels" value={enhancedTeams.reduce((s, t) => s + t.channelCount, 0)} detail="Total across teams" icon={FiCheckCircle} tone="slate" />
+      </div>
+
+      <Panel title={`Teams (${totalTeams})`} description={`Teams inside ${activeWorkspace.name}`} className="mt-6">
+        {enhancedTeams.length === 0 ? (
+          <EmptyState icon={FiBriefcase} title="No teams yet" description="Create your first team in this workspace to get started." />
         ) : (
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            {enhanced.map((dept, idx) => (
+            {enhancedTeams.map((team, idx) => (
               <motion.div
-                key={dept.id}
+                key={team.id}
                 initial={{ opacity: 0, y: 12 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.05 }}
@@ -79,41 +193,28 @@ export default function AdminDepartments() {
               >
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{dept.name}</h3>
+                    <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">{team.name}</h3>
                     <p className="mt-1 text-xs text-slate-500">
-                      Manager: <span className="font-semibold">{dept.managerName}</span>
+                      Lead: <span className="font-semibold">{team.leadName}</span>
                     </p>
                   </div>
                   <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary-50 text-primary-600 dark:bg-primary-900/30 dark:text-primary-300">
-                    <FiBriefcase className="h-5 w-5" />
+                    <FiUsers className="h-5 w-5" />
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+                {team.description && (
+                  <p className="mt-2 text-xs text-slate-400 dark:text-slate-500 line-clamp-2">{team.description}</p>
+                )}
+
+                <div className="mt-4 grid grid-cols-2 gap-2 text-center">
                   <div className="rounded-md bg-white/80 p-2 dark:bg-slate-800">
-                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{dept.memberCount}</p>
+                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{team.memberCount}</p>
                     <p className="text-[10px] font-semibold text-slate-500">Members</p>
                   </div>
                   <div className="rounded-md bg-white/80 p-2 dark:bg-slate-800">
-                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{dept.taskCount}</p>
-                    <p className="text-[10px] font-semibold text-slate-500">Tasks</p>
-                  </div>
-                  <div className="rounded-md bg-white/80 p-2 dark:bg-slate-800">
-                    <p className="text-lg font-bold text-emerald-600">{dept.completed}</p>
-                    <p className="text-[10px] font-semibold text-slate-500">Done</p>
-                  </div>
-                </div>
-
-                <div className="mt-3">
-                  <div className="flex items-center justify-between text-xs font-semibold text-slate-500">
-                    <span>Progress</span>
-                    <span>{dept.progress}%</span>
-                  </div>
-                  <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-primary-500 to-sky-400 transition-all"
-                      style={{ width: `${dept.progress}%` }}
-                    />
+                    <p className="text-lg font-bold text-slate-900 dark:text-slate-100">{team.channelCount}</p>
+                    <p className="text-[10px] font-semibold text-slate-500">Channels</p>
                   </div>
                 </div>
               </motion.div>

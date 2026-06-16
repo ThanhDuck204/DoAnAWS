@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
+import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
   FiBell,
@@ -12,8 +13,11 @@ import {
   FiSliders,
   FiToggleLeft,
   FiUser,
+  FiBriefcase,
+  FiChevronDown,
 } from 'react-icons/fi';
 import AppShell, { Panel, StatusPill, LoadingState } from '../../src/components/layout/AppShell';
+import { useWorkspace } from '../../src/context/WorkspaceContext';
 
 /**
  * Reusable toggle switch component.
@@ -30,7 +34,7 @@ function Toggle({ label, value, onChange }) {
         }`}
       >
         <span
-          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+          className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform dark:bg-slate-100 ${
             value ? 'translate-x-5' : 'translate-x-0'
           }`}
         />
@@ -40,8 +44,12 @@ function Toggle({ label, value, onChange }) {
 }
 
 export default function AdminSettings() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    currentUser, loading, workspaces,
+    activeWorkspace, activeWorkspaceId, selectWorkspace,
+    workspaceRole,
+  } = useWorkspace();
+  const [showWsPicker, setShowWsPicker] = useState(false);
   const [saved, setSaved] = useState(null);
   const [settings, setSettings] = useState({
     siteName: 'AI Meeting Workforce',
@@ -53,18 +61,27 @@ export default function AdminSettings() {
     maxUploadSize: '50',
   });
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-      const fallback = { id: 'emp-1', name: 'Alex Johnson', role: 'ADMIN', avatar: 'https://i.pravatar.cc/150?img=1' };
-      const currentUser = storedUser?.role === 'ADMIN' ? { ...fallback, ...storedUser } : fallback;
-      await new Promise((r) => setTimeout(r, 250));
-      setUser(currentUser);
-      setLoading(false);
+  const user = useMemo(() => {
+    if (!currentUser) return null;
+    return {
+      id: currentUser.id,
+      name: currentUser.name,
+      email: currentUser.email,
+      avatar: currentUser.avatar,
+      role: workspaceRole || currentUser.role,
+      departmentId: currentUser.departmentId,
+      createdAt: currentUser.createdAt,
     };
-    load();
-  }, []);
+  }, [currentUser, workspaceRole]);
+
+  const myWorkspaces = useMemo(() => {
+    if (!currentUser) return [];
+    return workspaces.filter((ws) =>
+      ws.members?.some((m) => m.userId === currentUser.id)
+    );
+  }, [workspaces, currentUser]);
+
+  const isOwner = workspaceRole === 'OWNER';
 
   const update = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -75,21 +92,120 @@ export default function AdminSettings() {
     setTimeout(() => setSaved(null), 2000);
   };
 
-  if (loading || !user) return <LoadingState label="Loading settings..." />;
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLoader className="mx-auto h-8 w-8 animate-spin text-primary-600" />
+          <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!currentUser) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background dark:bg-slate-950">
+        <div className="text-center">
+          <FiLock className="mx-auto h-8 w-8 text-slate-400" />
+          <p className="mt-4 text-sm font-medium text-slate-500">Please log in first.</p>
+          <Link href="/login" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Login</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (!activeWorkspace) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiBriefcase className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Select a workspace</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Choose a workspace to configure.</p>
+          <div className="mt-6 space-y-2">
+            {myWorkspaces.map((ws) => (
+              <button
+                key={ws.id}
+                type="button"
+                onClick={() => selectWorkspace(ws.id)}
+                className="w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-3 text-left font-semibold text-slate-800 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700 transition"
+              >
+                {ws.name}
+              </button>
+            ))}
+            {myWorkspaces.length === 0 && (
+              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 p-6 text-sm text-slate-500">
+                No workspaces yet. <Link href="/workspace" className="text-primary-600">Create one</Link>
+              </div>
+            )}
+          </div>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (!isOwner) {
+    return (
+      <AppShell user={user} showWorkspaceSwitcher={false}>
+        <div className="mx-auto mt-20 max-w-lg px-4 text-center">
+          <FiLock className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-600" />
+          <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-slate-100">Owner access required</h2>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+            You need the Owner role in <strong>{activeWorkspace.name}</strong> to access settings.
+          </p>
+          <Link href="/workspace" className="mt-4 inline-block rounded-lg bg-primary-600 px-4 py-2 text-sm font-bold text-white">Go to Workspace</Link>
+        </div>
+      </AppShell>
+    );
+  }
 
   return (
     <AppShell
       user={user}
-      eyebrow="Admin"
-      title="System settings"
+      eyebrow={activeWorkspace?.name || 'Admin'}
+      title="Workspace settings"
       description="Configure platform behavior, notifications, and defaults."
     >
+      {/* Workspace selector */}
+      <div className="relative mb-4">
+        <button
+          type="button"
+          onClick={() => setShowWsPicker(!showWsPicker)}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-700"
+        >
+          <FiBriefcase className="h-4 w-4" />
+          {activeWorkspace.name}
+          <FiChevronDown className="h-4 w-4" />
+        </button>
+        {showWsPicker && (
+          <>
+            <div className="fixed inset-0 z-10" onClick={() => setShowWsPicker(false)} />
+            <div className="absolute left-0 top-full z-20 mt-1 w-56 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-1 shadow-lg">
+              {myWorkspaces.map((ws) => (
+                <button
+                  key={ws.id}
+                  type="button"
+                  onClick={() => { selectWorkspace(ws.id); setShowWsPicker(false); }}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition ${
+                    ws.id === activeWorkspaceId
+                      ? 'bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300'
+                      : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {ws.name}
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-2">
         {/* General settings */}
         <Panel title="General" description="Basic platform configuration">
           <div className="space-y-5">
             <div>
-              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
+              <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                 Site name
               </label>
               <input
@@ -101,7 +217,7 @@ export default function AdminSettings() {
 
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   AI timeout (min)
                 </label>
                 <select
@@ -116,7 +232,7 @@ export default function AdminSettings() {
                 </select>
               </div>
               <div>
-                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500">
+                <label className="mb-1.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
                   Max upload (MB)
                 </label>
                 <select
@@ -141,7 +257,7 @@ export default function AdminSettings() {
                   settings.allowRegistration ? 'bg-primary-600' : 'bg-slate-300 dark:bg-slate-600'
                 }`}
               >
-                <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${
+                <span className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform dark:bg-slate-100 ${
                   settings.allowRegistration ? 'translate-x-5' : 'translate-x-0'
                 }`} />
               </button>
@@ -215,21 +331,21 @@ export default function AdminSettings() {
               <FiShield className="h-8 w-8 text-emerald-500" />
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-slate-100">All systems secure</p>
-                <p className="text-xs text-slate-500">No security incidents reported</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">No security incidents reported</p>
               </div>
             </div>
             <div className="flex items-center gap-4 rounded-lg bg-slate-50 p-4 dark:bg-slate-800">
               <FiLock className="h-8 w-8 text-primary-500" />
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-slate-100">JWT authentication active</p>
-                <p className="text-xs text-slate-500">Role-based access control enabled</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Role-based access control enabled</p>
               </div>
             </div>
             <div className="flex items-center gap-4 rounded-lg bg-slate-50 p-4 dark:bg-slate-800">
               <FiGlobe className="h-8 w-8 text-amber-500" />
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Audit logging</p>
-                <p className="text-xs text-slate-500">All actions are recorded</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">All actions are recorded</p>
               </div>
             </div>
           </div>

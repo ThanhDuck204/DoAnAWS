@@ -2,24 +2,26 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
-  workspaces as defaultWorkspaces,
-  mockMessages,
-  mockWorkspaceMeetings,
-  mockInvitations,
-  userWorkspaces,
+  mockUsers,
   DEFAULT_ROLES,
   generateId,
   generateWorkspaceSlug,
   hasWorkspacePermission,
   getUserWorkspacePermissions,
   getWorkspaceRole,
-  createDefaultWorkspaceStructure,
   createInitialActivity,
 } from '@/lib/workspaceData';
 import { analyzeMeeting as serviceAnalyzeMeeting, uploadMeetingFile as serviceUploadMeetingFile } from '@/services/meetingService';
+import { isCloudMode, isMockMode } from '@/services/apiClient';
 import { createVoiceRecord as serviceCreateVoiceRecord } from '@/services/voiceRecordingService';
 import { createTasksFromSuggestions as buildTasksFromSuggestions, getTasksByMeeting as serviceGetTasksByMeeting } from '@/services/taskService';
-import { canManageAIWorkflow } from '@/services/workspaceService';
+import { canManageAIWorkflow, createCleanWorkspaceStructure } from '@/services/workspaceService';
+import { loginUser, registerUser } from '@/services/userService';
+import {
+  getWorkspacePlan,
+  getWorkspaceUsageSnapshot,
+  validateWorkspaceCapacity,
+} from '@/services/billingService';
 import {
   MAX_VOICE_RECORDING_SIZE_BYTES,
   WARNING_VOICE_RECORDING_SIZE_BYTES,
@@ -36,6 +38,16 @@ import {
 } from '@/lib/voiceAudioQuality';
 
 const WorkspaceContext = createContext(null);
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const STORAGE_KEYS = {
+  workspaces: 'meetingAppWorkspaces',
+  messages: 'meetingAppMessages',
+  tasks: 'meetingAppWorkspaceTasks',
+  meetings: 'meetingAppWorkspaceMeetings',
+  trash: 'meetingAppWorkspaceTrash',
+};
+const EMPTY_TRASH = { tasks: [], meetings: [], teams: [] };
+const STORAGE_VERSION_KEY = 'meetingAppStorageVersion';
 
 const workspaceRoleLabels = {
   OWNER: 'Owner',
@@ -71,21 +83,24 @@ export function WorkspaceProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   // ─── Workspace State ───────────────────────────────────
-  const [workspaces, setWorkspaces] = useState(defaultWorkspaces);
+  const [workspaces, setWorkspaces] = useState([]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(null);
   const [activeChannelId, setActiveChannelId] = useState(null);
   const [activeTeamId, setActiveTeamId] = useState(null);
   const [activeView, setActiveView] = useState(null); // 'home' | 'tasks' | 'meetings' | 'analytics' | 'members' | 'teams' | 'settings' | 'team-chat' | null
 
   // ─── Messages ──────────────────────────────────────────
-  const [messages, setMessages] = useState(mockMessages);
+  const [messages, setMessages] = useState({});
 
   // ─── Invitations ───────────────────────────────────────
-  const [invitations, setInvitations] = useState(mockInvitations);
+  const [invitations, setInvitations] = useState([]);
 
   // ─── Workspace Tasks (shared between meetings AI and Kanban) ──
   const [workspaceTasks, setWorkspaceTasks] = useState([]);
-  const [workspaceMeetings, setWorkspaceMeetings] = useState(mockWorkspaceMeetings || []);
+  const [workspaceMeetings, setWorkspaceMeetings] = useState([]);
+  const [trashItems, setTrashItems] = useState(EMPTY_TRASH);
+  const workspaceStorageHydratedRef = useRef(false);
+  const [workspaceStorageHydrated, setWorkspaceStorageHydrated] = useState(false);
   const [voiceParticipants, setVoiceParticipants] = useState({});
   const [activeVoiceChannelId, setActiveVoiceChannelId] = useState(null);
   const [activeVoiceRecordings, setActiveVoiceRecordings] = useState({});
@@ -98,20 +113,87 @@ export function WorkspaceProvider({ children }) {
   const [aiNotifications, setAiNotifications] = useState([]);
   const [workspaceNotificationSettings, setWorkspaceNotificationSettings] = useState({});
 
-  // Initialize tasks from mock data
+  /**
+   * Normalize a user object from any source (API, localStorage, mock).
+   */
+  function toHydratedUser(user) {
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      avatar: user.avatar || null,
+      phone: user.phone || '',
+      avatarHistory: user.avatarHistory || [],
+      role: user.role || 'EMPLOYEE',
+      departmentId: user.departmentId || null,
+      createdAt: user.createdAt || new Date().toISOString(),
+    };
+  }
+
+  // Initialize persisted mock-mode workspace state.
   useEffect(() => {
-    const loadMockTasks = async () => {
+    let cancelled = false;
+    const loadWorkspaceState = async () => {
       try {
-        const { tasks: mockTasks } = await import('@/lib/mockData');
-        if (mockTasks && mockTasks.length > 0) {
-          setWorkspaceTasks(mockTasks);
+        // One-time cache clear: purge stale localStorage data from the mock-data era
+        if (!localStorage.getItem(STORAGE_VERSION_KEY)) {
+          Object.values(STORAGE_KEYS).forEach(key => localStorage.removeItem(key));
+          localStorage.setItem(STORAGE_VERSION_KEY, '1');
         }
-      } catch (e) {
-        // Fallback: empty tasks
+
+        const storedWorkspaces = localStorage.getItem(STORAGE_KEYS.workspaces);
+        const storedMessages = localStorage.getItem(STORAGE_KEYS.messages);
+        const storedTasks = localStorage.getItem(STORAGE_KEYS.tasks);
+        const storedMeetings = localStorage.getItem(STORAGE_KEYS.meetings);
+        const storedTrash = localStorage.getItem(STORAGE_KEYS.trash);
+
+        if (cancelled) return;
+        if (storedWorkspaces) setWorkspaces(JSON.parse(storedWorkspaces));
+        if (storedMessages) setMessages(JSON.parse(storedMessages));
+        if (storedMeetings) setWorkspaceMeetings(JSON.parse(storedMeetings));
+        if (storedTrash) setTrashItems({ ...EMPTY_TRASH, ...JSON.parse(storedTrash) });
+
+        if (storedTasks) {
+          setWorkspaceTasks(JSON.parse(storedTasks));
+        }
+        // New workspaces start with no tasks — no mock seeding
+      } catch {
+        // Mock storage is best-effort. Fall back to seed data.
+      } finally {
+        if (!cancelled) setWorkspaceStorageHydrated(true);
       }
     };
-    loadMockTasks();
+
+    loadWorkspaceState();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!workspaceStorageHydrated) return;
+    localStorage.setItem(STORAGE_KEYS.workspaces, JSON.stringify(workspaces));
+  }, [workspaceStorageHydrated, workspaces]);
+
+  useEffect(() => {
+    if (!workspaceStorageHydrated) return;
+    localStorage.setItem(STORAGE_KEYS.messages, JSON.stringify(messages));
+  }, [workspaceStorageHydrated, messages]);
+
+  useEffect(() => {
+    if (!workspaceStorageHydrated) return;
+    localStorage.setItem(STORAGE_KEYS.tasks, JSON.stringify(workspaceTasks));
+  }, [workspaceStorageHydrated, workspaceTasks]);
+
+  useEffect(() => {
+    if (!workspaceStorageHydrated) return;
+    localStorage.setItem(STORAGE_KEYS.meetings, JSON.stringify(workspaceMeetings));
+  }, [workspaceStorageHydrated, workspaceMeetings]);
+
+  useEffect(() => {
+    if (!workspaceStorageHydrated) return;
+    localStorage.setItem(STORAGE_KEYS.trash, JSON.stringify(trashItems));
+  }, [workspaceStorageHydrated, trashItems]);
 
   useEffect(() => {
     voiceRecordsRef.current = voiceRecords;
@@ -165,32 +247,66 @@ export function WorkspaceProvider({ children }) {
     [aiNotifications]
   );
 
-  // ─── Initialize from localStorage ──────────────────────
+  // ─── Initialize from localStorage or Cloud session ────
   useEffect(() => {
-    const stored = localStorage.getItem('meetingAppUser');
-    if (stored) {
+    const restoreSession = async () => {
       try {
-        // Mock-only client auth state. Do not store real access/refresh tokens in localStorage.
-        const user = JSON.parse(stored);
-        // Ensure user is account-only
-        setCurrentUser({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          avatar: user.avatar,
-        });
+        // Cloud mode: verify token and fetch user from API Gateway
+        if (isCloudMode()) {
+          const { getAuthToken } = await import('@/services/apiClient');
+          const token = getAuthToken();
+          if (token) {
+            try {
+              const { authApi } = await import('@/services/cloudClient');
+              const result = await authApi.me();
+              const user = result?.user || result;
+              if (user?.id) {
+                const hydratedUser = toHydratedUser(user);
+                setCurrentUser(hydratedUser);
+                localStorage.setItem('meetingAppUser', JSON.stringify({
+                  user: hydratedUser,
+                  createdAt: Date.now(),
+                  expiresAt: Date.now() + SESSION_TTL_MS,
+                }));
+                localStorage.setItem('user', JSON.stringify(hydratedUser));
+                return;
+              }
+            } catch {
+              // Token invalid or expired — clear and fall through to mock mode
+              const { clearAuthToken } = await import('@/services/apiClient');
+              clearAuthToken();
+            }
+          }
+        }
 
-        const savedWs = localStorage.getItem('activeWorkspaceId');
-        if (savedWs) {
-          setActiveWorkspaceId(savedWs);
-          const savedChannel = localStorage.getItem('activeChannelId_' + savedWs);
-          if (savedChannel) setActiveChannelId(savedChannel);
+        // Mock/API mode: restore user from localStorage
+        const stored = localStorage.getItem('meetingAppUser');
+        if (stored) {
+          const session = JSON.parse(stored);
+          const user = session?.user || session;
+          if (session?.expiresAt && session.expiresAt <= Date.now()) {
+            localStorage.removeItem('meetingAppUser');
+            return;
+          }
+          const hydratedUser = toHydratedUser(user);
+          setCurrentUser(hydratedUser);
+          localStorage.setItem('user', JSON.stringify(hydratedUser));
+
+          const savedWs = localStorage.getItem('activeWorkspaceId');
+          if (savedWs) {
+            setActiveWorkspaceId(savedWs);
+            const savedChannel = localStorage.getItem('activeChannelId_' + savedWs);
+            if (savedChannel) setActiveChannelId(savedChannel);
+          }
         }
       } catch (e) {
         // Ignore parse errors
+      } finally {
+        setLoading(false);
       }
-    }
-    setLoading(false);
+    };
+
+    restoreSession();
   }, []);
 
   // ─── Auto-select workspace when user logs in ──────────
@@ -274,8 +390,18 @@ export function WorkspaceProvider({ children }) {
 
   const workspaceMembers = useMemo(() => {
     if (!activeWorkspace) return [];
-    return activeWorkspace.members;
-  }, [activeWorkspace]);
+    return (activeWorkspace.members || []).map((member) => {
+      const profile = member.userId === currentUser?.id
+        ? currentUser
+        : mockUsers.find((user) => user.id === member.userId);
+      return {
+        ...member,
+        name: member.name || member.nickname || profile?.name || null,
+        email: member.email || profile?.email || null,
+        avatar: member.avatar || profile?.avatar || null,
+      };
+    });
+  }, [activeWorkspace, currentUser]);
 
   const workspaceTeams = useMemo(() => {
     if (!activeWorkspace) return [];
@@ -393,44 +519,48 @@ export function WorkspaceProvider({ children }) {
   // ─── Auth Actions ──────────────────────────────────────
   const login = useCallback(async (email, password) => {
     await new Promise((r) => setTimeout(r, 800));
-
-    const { mockUsers } = await import('@/lib/workspaceData');
-    const user = mockUsers.find((u) => u.email === email);
-
-    if (!user) throw new Error('Email không tồn tại');
-    if (password !== '123456') throw new Error('Mật khẩu không đúng');
-
-    // Return account-only object (NO global role)
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      avatar: user.avatar,
-    };
+    return loginUser(email, password);
   }, []);
 
   const register = useCallback(async (name, email, password) => {
     await new Promise((r) => setTimeout(r, 800));
-
-    if (!name || !email || !password) throw new Error('Vui lòng điền đầy đủ thông tin');
-
-    return {
-      id: 'user-' + generateId(),
-      name,
-      email,
-      avatar: null,
-      createdAt: new Date().toISOString(),
-    };
+    return registerUser(name, email, password);
   }, []);
 
   const setUser = useCallback((user) => {
     setCurrentUser(user);
     if (user) {
       // Mock-only account profile persistence. Real auth should use secure server/session storage.
-      localStorage.setItem('meetingAppUser', JSON.stringify(user));
+      localStorage.setItem('meetingAppUser', JSON.stringify({
+        user,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL_MS,
+      }));
+      localStorage.setItem('user', JSON.stringify(user));
     } else {
       localStorage.removeItem('meetingAppUser');
+      localStorage.removeItem('user');
     }
+  }, []);
+
+  const updateCurrentUser = useCallback((updates) => {
+    setCurrentUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...updates };
+      localStorage.setItem('meetingAppUser', JSON.stringify({
+        user: next,
+        createdAt: Date.now(),
+        expiresAt: Date.now() + SESSION_TTL_MS,
+      }));
+      localStorage.setItem('user', JSON.stringify(next));
+      // Sync update to API Gateway/Next.js API in non-mock modes
+      if (!isMockMode()) {
+        import('@/services/cloudClient').then((m) => {
+          m.usersApi.update(prev.id, updates).catch(() => {});
+        });
+      }
+      return next;
+    });
   }, []);
 
   const logout = useCallback(() => {
@@ -440,14 +570,19 @@ export function WorkspaceProvider({ children }) {
     setActiveTeamId(null);
     setActiveView(null);
     localStorage.removeItem('meetingAppUser');
+    localStorage.removeItem('user');
     localStorage.removeItem('activeWorkspaceId');
+    // Clear auth token in cloud/api modes
+    if (!isMockMode()) {
+      import('@/services/apiClient').then((m) => m.clearAuthToken());
+    }
   }, []);
 
   // ─── Workspace Actions ─────────────────────────────────
-  const createWorkspace = useCallback((name) => {
+  const createWorkspace = useCallback((workspaceData, options = {}) => {
     if (!currentUser) return null;
 
-    const newWorkspace = createDefaultWorkspaceStructure(name, currentUser.id);
+    const newWorkspace = createCleanWorkspaceStructure(workspaceData, currentUser.id, options);
 
     setWorkspaces((prev) => [...prev, newWorkspace]);
     setActiveWorkspaceId(newWorkspace.id);
@@ -470,10 +605,12 @@ export function WorkspaceProvider({ children }) {
       updatedAt: null,
     };
 
-    setMessages((prev) => ({
-      ...prev,
-      [firstText?.id]: [welcomeMsg],
-    }));
+    if (firstText?.id) {
+      setMessages((prev) => ({
+        ...prev,
+        [firstText.id]: [welcomeMsg],
+      }));
+    }
 
     // Initialize activity feed
     const initialActivities = createInitialActivity(newWorkspace.id, currentUser.name);
@@ -646,6 +783,23 @@ export function WorkspaceProvider({ children }) {
 
     const workspace = workspaces.find((w) => w.id === workspaceId);
     if (!workspace) return;
+    const plan = getWorkspacePlan(workspace);
+    const usage = getWorkspaceUsageSnapshot({
+      workspace,
+      meetings: workspaceMeetings,
+      members: workspace.members || [],
+    });
+    const capacity = validateWorkspaceCapacity({
+      plan,
+      usage: { ...usage, memberCount: usage.memberCount + 1 },
+    });
+    if (!capacity.allowed) {
+      showToast('error', capacity.message);
+      return null;
+    }
+    if (capacity.warning) {
+      showToast('info', capacity.message);
+    }
 
     const newInv = {
       id: 'inv-' + generateId(),
@@ -664,7 +818,7 @@ export function WorkspaceProvider({ children }) {
     addActivity('invitation_sent', 'Invitation sent to ' + inviteeEmail);
     showToast('success', teamIds?.length ? 'Invitation sent and assigned to selected teams.' : 'Invitation sent to ' + inviteeEmail);
     return newInv;
-  }, [currentUser, workspaces, addActivity, showToast]);
+  }, [currentUser, workspaces, workspaceMeetings, addActivity, showToast]);
 
   const acceptInvitation = useCallback((invitationId) => {
     const inv = invitations.find((i) => i.id === invitationId);
@@ -773,6 +927,8 @@ export function WorkspaceProvider({ children }) {
       title: meetingData.title.trim(),
       type: meetingData.type || 'TRANSCRIPT',
       fileName: meetingData.fileName || null,
+      fileSize: meetingData.fileSize || meetingData.file?.size || 0,
+      audioMinutes: meetingData.audioMinutes || 0,
       audioFile: meetingData.audioFile || null,
       storageKey: meetingData.storageKey || null,
       transcript: meetingData.transcript || '',
@@ -1028,6 +1184,23 @@ export function WorkspaceProvider({ children }) {
     // Find the workspace
     const ws = workspaces.find((w) => w.id === workspaceId);
     if (!ws) return null;
+    const plan = getWorkspacePlan(ws);
+    const usage = getWorkspaceUsageSnapshot({
+      workspace: ws,
+      meetings: workspaceMeetings,
+      members: ws.members || [],
+    });
+    const capacity = validateWorkspaceCapacity({
+      plan,
+      usage: { ...usage, teamCount: usage.teamCount + 1 },
+    });
+    if (!capacity.allowed) {
+      showToast('error', capacity.message);
+      return null;
+    }
+    if (capacity.warning) {
+      showToast('info', capacity.message);
+    }
 
     const memberIds = Array.from(new Set([
       ...(teamData.memberIds || []),
@@ -1067,7 +1240,7 @@ export function WorkspaceProvider({ children }) {
     showToast('success', 'Team "' + newTeam.name + '" created!');
 
     return newTeam;
-  }, [workspaces, currentUser, addActivity, completeOnboardingStep, showToast]);
+  }, [workspaces, workspaceMeetings, currentUser, addActivity, completeOnboardingStep, showToast]);
 
   const updateTeam = useCallback((workspaceId, teamId, teamData) => {
     setWorkspaces((prev) =>
@@ -1587,6 +1760,24 @@ export function WorkspaceProvider({ children }) {
     });
   }, [voiceChannels, updateVoiceChannelPermissions]);
 
+  const restoreTrashItem = useCallback((type, id) => {
+    setTrashItems((prev) => ({
+      ...EMPTY_TRASH,
+      ...prev,
+      [`${type}s`]: (prev?.[`${type}s`] || []).filter((item) => item.id !== id),
+    }));
+    showToast('success', 'Item restored.');
+  }, [showToast]);
+
+  const permanentlyDeleteTrashItem = useCallback((type, id) => {
+    setTrashItems((prev) => ({
+      ...EMPTY_TRASH,
+      ...prev,
+      [`${type}s`]: (prev?.[`${type}s`] || []).filter((item) => item.id !== id),
+    }));
+    showToast('info', 'Item permanently deleted.');
+  }, [showToast]);
+
   const addUserToVoiceChannel = useCallback((channelId, userId) => {
     const channel = voiceChannels.find((item) => item.id === channelId);
     return updateVoiceChannelPermissions(channelId, {
@@ -1689,6 +1880,7 @@ export function WorkspaceProvider({ children }) {
       login,
       register,
       setUser,
+      updateCurrentUser,
       logout,
 
       // Workspace
@@ -1762,6 +1954,9 @@ export function WorkspaceProvider({ children }) {
       workspaceTasks,
       addWorkspaceTasks,
       moveWorkspaceTask,
+      trashItems,
+      restoreTrashItem,
+      permanentlyDeleteTrashItem,
 
       // Meetings / AI workflow
       workspaceMeetings,
@@ -1856,11 +2051,11 @@ export function WorkspaceProvider({ children }) {
       textChannels, voiceChannels, channelMessages,
       voiceParticipants, activeVoiceRecordings, voiceRecords,
       workspaceMembers, workspaceTeams, invitations, userInvitations,
-      workspaceTasks, workspaceMeetings, aiNotifications, workspaceNotificationSettings, workspaceNotificationsEnabled, activityFeed, toasts, onboarding,
+      workspaceTasks, workspaceMeetings, trashItems, aiNotifications, workspaceNotificationSettings, workspaceNotificationsEnabled, activityFeed, toasts, onboarding,
       showInvitations, showUserMenu, showCreateChannel,
       showCreateWorkspace, showCreateTeam, showInviteMember,
       showNotifications, notificationCount,
-      login, register, setUser, logout, selectWorkspace, createWorkspace,
+      login, register, setUser, updateCurrentUser, logout, selectWorkspace, createWorkspace,
       selectView, selectChannel, selectTeamChat, createChannel, deleteChannel,
       sendMessage, sendTeamMessage,
       canAccessVoice, canRecordVoice, updateVoiceParticipantState, syncVoiceParticipant, removeVoiceParticipant, setVoiceChannelParticipants, joinVoiceChannel, leaveVoiceChannel,
@@ -1869,6 +2064,7 @@ export function WorkspaceProvider({ children }) {
       updateVoiceChannelPermissions, addTeamToVoiceChannel, removeTeamFromVoiceChannel,
       addUserToVoiceChannel, removeUserFromVoiceChannel,
       toggleVoiceChannelLock, toggleVoiceRecordingPermission,
+      restoreTrashItem, permanentlyDeleteTrashItem,
       sendVoiceRecordToAI, deleteVoiceRecord,
       updateMemberRole, removeMember,
       addWorkspaceTasks, moveWorkspaceTask,

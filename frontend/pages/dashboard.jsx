@@ -17,10 +17,10 @@ export default function DashboardRedirect() {
   }, [currentUser, loading, router, userRole]);
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#eef3f8]">
+    <div className="flex h-screen items-center justify-center bg-background dark:bg-slate-950">
       <div className="text-center">
         <FiLoader className="mx-auto h-8 w-8 animate-spin text-blue-600" />
-        <p className="mt-4 text-sm font-semibold text-slate-500">Opening your dashboard...</p>
+        <p className="mt-4 text-sm font-semibold text-slate-500 dark:text-slate-400">Opening your dashboard...</p>
       </div>
     </div>
   );
