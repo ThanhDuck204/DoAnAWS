@@ -34,7 +34,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: backend/package-lock.json
-      - run: npm ci
+      - run: npm install
       - run: npm run lint
       - run: npm run build
       - run: npm test
@@ -55,7 +55,7 @@ jobs:
           cache: npm
           cache-dependency-path: backend/package-lock.json
 
-      - run: npm ci
+      - run: npm install
       - run: npm run build
 
       - name: Bundle Lambda with esbuild
